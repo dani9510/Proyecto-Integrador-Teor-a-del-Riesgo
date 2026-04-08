@@ -6,7 +6,7 @@ from services.sheets import save_to_sheets
 
 app = FastAPI()
 
-TICKERS = ["AVAL", "^GSPC", "ETH-USD", "IBM", "C6L.SI"]
+TICKERS = ["AVAL", "^GSPC", "ETH-USD", "IBM", "C6L.SI","NTDOY"]
 
 
 @app.get("/")
