@@ -29,6 +29,9 @@ def compute_garch(data_dict):
                 # Diagnóstico GARCH: Akaike Information Criterion (Se añade como constante en la serie)
                 df["GARCH_AIC"] = res.aic
                 
+                # Mejora nivel top: Residuos Estandarizados para validar modelo y normalidad
+                df["GARCH_Std_Resid"] = res.resid / res.conditional_volatility
+                
             except Exception as e:
                 print(f"❌ Error estimando GARCH para {ticker}: {e}")
                 df["GARCH_Vol"] = None
