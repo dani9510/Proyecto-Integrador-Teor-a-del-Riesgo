@@ -18,6 +18,10 @@ def get_data(tickers):
 
         if df.empty:
             continue
+            
+        # Aplanar el MultiIndex que introduce la nueva versión de yfinance
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [col[0] for col in df.columns]
 
         df = df.reset_index()
 
