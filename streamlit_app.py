@@ -1,6 +1,11 @@
+import runpy
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "market-api"))
+root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(root, "market-api"))
 
-exec(open(os.path.join(os.path.dirname(__file__), "market-api", "app", "main.py")).read())
+runpy.run_path(
+    os.path.join(root, "market-api", "app", "main.py"),
+    run_name="__main__"
+)
