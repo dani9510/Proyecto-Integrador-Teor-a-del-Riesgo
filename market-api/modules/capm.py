@@ -29,7 +29,7 @@ def compute_capm(data_dict, market_ticker="^GSPC", rf_ticker="^IRX"):
                    rf_df.columns = [col[0] for col in rf_df.columns]
                current_rf_annual = rf_df["Close"].dropna().iloc[-1] / 100
     except Exception as e:
-        print(f"⚠️ Aviso (CAPM): Tasa Risk-Free inalcanzable. Usando fallback 4%. Detalle: {e}")
+        print(f"[WARN] CAPM: Tasa Risk-Free inalcanzable. Usando fallback 4%. Detalle: {e}")
 
     # 2. Retorno empírico del benchmark y Varianza (Con Fallback para la Demo)
     has_market = False

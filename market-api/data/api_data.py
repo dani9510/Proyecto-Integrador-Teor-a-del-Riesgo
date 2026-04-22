@@ -1,4 +1,5 @@
 import yfinance as yf
+import pandas as pd
 from datetime import datetime, timedelta
 
 def get_data(tickers):
@@ -18,12 +19,13 @@ def get_data(tickers):
 
         if df.empty:
             continue
-            
+
         # Aplanar el MultiIndex que introduce la nueva versión de yfinance
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [col[0] for col in df.columns]
 
-        df = df.reset_index()
+        # Mantener el DatetimeIndex para que los gráficos usen fechas reales
+        df.index.name = "Date"
 
         data[ticker] = df
 

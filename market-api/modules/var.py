@@ -39,36 +39,44 @@ def compute_var(data_dict, confidence_level=0.95):
         
         if "log_return" in df.columns:
             returns = df["log_return"].dropna()
-            
+
             if len(returns) > 0:
-                # 1. VaR Paramétrico (Distribución Normal)
                 mu = returns.mean()
                 sigma = returns.std()
+                simulated_returns = np.random.normal(mu, sigma, 10000)
+
+                # Siempre calcular al 95% Y al 99%
+                for cl, suffix in [(0.95, "95"), (0.99, "99")]:
+                    a = 1 - cl
+                    z = norm.ppf(cl)
+                    vp = mu - z * sigma
+                    vh = np.percentile(returns, a * 100)
+                    vm = np.percentile(simulated_returns, a * 100)
+                    losses = returns[returns <= vh]
+                    cv = losses.mean() if len(losses) > 0 else vh
+
+                    df[f"VaR_{suffix}_Param"] = vp
+                    df[f"VaR_{suffix}_Hist"]  = vh
+                    df[f"VaR_{suffix}_MC"]    = vm
+                    df[f"CVaR_{suffix}"]       = cv
+
+                # Columnas al nivel configurado (para compatibilidad con otras secciones)
                 z_score = norm.ppf(confidence_level)
                 var_param = mu - z_score * sigma
-                
-                # 2. VaR Histórico (Basado en datos fácticos reales)
                 var_hist = np.percentile(returns, alpha * 100)
-                
-                # 3. VaR Monte Carlo (Distribución Estocástica simulada)
-                simulations = 10000
-                simulated_returns = np.random.normal(mu, sigma, simulations)
                 var_mc = np.percentile(simulated_returns, alpha * 100)
-                
-                # 4. CVaR - Conditional Value at Risk (Expected Shortfall) de la cola
                 losses_below_var = returns[returns <= var_hist]
                 cvar = losses_below_var.mean() if len(losses_below_var) > 0 else var_hist
-                
-                # Guardar salidas en DataFrame
-                df["VaR_95_Param"] = var_param
-                df["VaR_95_Hist"] = var_hist
-                df["VaR_95_MC"] = var_mc
-                df["CVaR_95"] = cvar
-                
-                # 5. BONUS: Test de Kupiec para asertividad del VaR Histórico
+
+                df["VaR_Param"] = var_param
+                df["VaR_Hist"]  = var_hist
+                df["VaR_MC"]    = var_mc
+                df["CVaR"]      = cvar
+
+                # Test de Kupiec sobre VaR histórico al nivel configurado
                 kupiec_res = kupiec_test(returns, var_hist, confidence_level)
                 df["Kupiec_Exceptions"] = kupiec_res["Exceptions"]
-                df["Kupiec_Status"] = kupiec_res["Status"]
+                df["Kupiec_Status"]     = kupiec_res["Status"]
 
         results[ticker] = df
         
