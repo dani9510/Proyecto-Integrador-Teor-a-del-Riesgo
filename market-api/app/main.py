@@ -2053,8 +2053,16 @@ elif "Derivados Forward" in section:
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Tabla de precios forward ──────────────────────────────────
-        st.markdown("### Precios Forward Teóricos por Activo")
+        # ── Tabla de precios forward + yield implícito ───────────────
+        st.markdown("### Precios Forward Teóricos y Yield de Conveniencia Implícito")
+        st.markdown("""
+        <div class="theory-text" style="margin-bottom:8px;">
+        Invirtiendo la fórmula de costo de acarreo se obtiene el <strong>yield de conveniencia implícito</strong>
+        que el mercado incorpora, dado el precio spot observado:<br>
+        <strong>y<sub>impl</sub> = r + u − ln(F / S) / T</strong><br>
+        Si y<sub>impl</sub> &gt; r + u → Backwardation; si y<sub>impl</sub> &lt; r + u → Contango.
+        </div>
+        """, unsafe_allow_html=True)
         fwd_rows = []
         for ticker in valid_assets:
             df_fwd = data_cache["ind"].get(ticker)
@@ -2065,14 +2073,20 @@ elif "Derivados Forward" in section:
             basis = S - F
             regime = "Contango" if F > S else "Backwardation"
             vol_ann = float(df_fwd["log_return"].dropna().std() * np.sqrt(252)) if "log_return" in df_fwd.columns else np.nan
+            # Yield de conveniencia implícito: y = r + u - ln(F/S)/T
+            if T_fwd > 0 and F > 0 and S > 0:
+                y_impl = r_fwd + u_fwd - np.log(F / S) / T_fwd
+            else:
+                y_impl = np.nan
             fwd_rows.append({
                 "Activo": ticker,
                 "Spot (S)": round(S, 4),
                 "Forward (F)": round(F, 4),
                 "F − S": round(F - S, 4),
                 "Basis S − F": round(basis, 4),
+                "y implícito": f"{y_impl:.4%}" if not np.isnan(y_impl) else "N/A",
                 "Régimen": regime,
-                "Volatilidad Anual": f"{vol_ann:.2%}" if not np.isnan(vol_ann) else "N/A",
+                "Vol Anual σ": f"{vol_ann:.2%}" if not np.isnan(vol_ann) else "N/A",
             })
 
         fwd_df = pd.DataFrame(fwd_rows)
@@ -2107,26 +2121,37 @@ elif "Derivados Forward" in section:
 
         # ── Basis histórico ───────────────────────────────────────────
         st.markdown("---")
-        st.markdown("### Evolución Histórica del Basis: b(t) = S(t) − F(t)")
+        st.markdown("### Evolución Histórica: Spot vs. Forward Teórico y Basis b(t) = S(t) − F(t)")
+        st.markdown("""
+        <div class="theory-text" style="margin-bottom:8px;">
+        El basis teórico con T fijo es proporcional al precio spot: b(t) = S(t)·(1 − e<sup>carry·T</sup>).
+        Cuando carry &gt; 0 (Contango), el basis es siempre negativo (F &gt; S).
+        El basis real de mercado adiciona <strong>basis risk</strong> cuando el activo cubierto y el futuro no son idénticos.
+        </div>
+        """, unsafe_allow_html=True)
         sel_basis = st.selectbox("Activo para basis histórico", valid_assets, key="fwd_basis_sel")
         df_bsel = data_cache["ind"].get(sel_basis)
         if df_bsel is not None and "Close" in df_bsel.columns:
             closes_b = df_bsel["Close"].dropna()
             F_hist = closes_b * np.exp(carry_rate * T_fwd)
             basis_hist = closes_b - F_hist
-            fig_basis = go.Figure()
-            fig_basis.add_trace(go.Scatter(
-                x=basis_hist.index, y=basis_hist.values, name="Basis b(t)",
-                line=dict(color="#7c3aed", width=1.5),
-                fill="tozeroy", fillcolor="rgba(124,58,237,0.1)",
-            ))
-            fig_basis.add_hline(y=0, line_dash="dash", line_color="#ec4899",
-                                annotation_text="Paridad (F = S)")
+
+            from plotly.subplots import make_subplots
+            fig_basis = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                      row_heights=[0.65, 0.35],
+                                      subplot_titles=("Precio Spot vs Forward Teórico", "Basis b(t) = S(t) − F(t)"))
+            fig_basis.add_trace(go.Scatter(x=closes_b.index, y=closes_b.values,
+                                           name="Spot S(t)", line=dict(color="#7c3aed", width=1.5)), row=1, col=1)
+            fig_basis.add_trace(go.Scatter(x=F_hist.index, y=F_hist.values,
+                                           name=f"Forward F(t) T={T_fwd_months}M", line=dict(color="#f59e0b", width=1.5, dash="dash")), row=1, col=1)
+            fig_basis.add_trace(go.Scatter(x=basis_hist.index, y=basis_hist.values,
+                                           name="Basis b(t)", line=dict(color="#ec4899", width=1.2),
+                                           fill="tozeroy", fillcolor="rgba(236,72,153,0.1)"), row=2, col=1)
+            fig_basis.add_hline(y=0, line_dash="dot", line_color="#64748b", row=2, col=1)
             fig_basis.update_layout(
-                title=f"Basis Forward — {sel_basis} | T = {T_fwd_months}M",
-                xaxis_title="Fecha", yaxis_title="Basis (USD)",
+                title=f"Spot vs Forward Teórico — {sel_basis} | Carry = {carry_rate:.2%} | T = {T_fwd_months}M",
                 plot_bgcolor="#0f172a", paper_bgcolor="#0f172a",
-                font=dict(color="#e2e8f0"),
+                font=dict(color="#e2e8f0"), height=480,
             )
             st.plotly_chart(fig_basis, use_container_width=True)
 
@@ -2135,12 +2160,12 @@ elif "Derivados Forward" in section:
         st.markdown("### Ratio de Cobertura Óptima (h*) y Número de Contratos (N*)")
         st.markdown("""
         <div class="theory-text">
-        La <strong>ratio de cobertura mínimo-varianza</strong> determina qué fracción de la posición cubrir:<br><br>
-        <span style="font-size:1.2em;font-weight:700;color:#7c3aed;">h* = ρ · (σ<sub>S</sub> / σ<sub>F</sub>)</span><br><br>
-        El número de contratos necesarios (ajustado por tamaño de posición) es:<br>
-        <span style="font-size:1.2em;font-weight:700;color:#ec4899;">N* = h* · (V<sub>A</sub> / V<sub>F</sub>)</span><br><br>
-        Para activos financieros a corto plazo, σ<sub>F</sub> ≈ σ<sub>S</sub> y ρ ≈ 0.95,
-        de modo que h* ≈ 0.95 (cobertura casi completa).
+        La <strong>ratio de cobertura mínimo-varianza</strong> minimiza Var(ΔS − h·ΔF):<br><br>
+        <span style="font-size:1.2em;font-weight:700;color:#7c3aed;">h* = Cov(ΔS, ΔF) / Var(ΔF) = ρ · σ<sub>S</sub> / σ<sub>F</sub></span><br><br>
+        Para una <strong>cobertura cruzada</strong> con futuros del índice DJI, h* = β<sub>CAPM</sub>
+        (misma fórmula, con F = DJI). El <strong>Ajuste de Cola (Tailing)</strong> descuenta
+        el efecto del mark-to-market diario del contrato de futuros:<br>
+        <span style="font-size:1.2em;font-weight:700;color:#ec4899;">N<sub>tailed</sub> = h* · (V<sub>A</sub> / V<sub>F</sub>) · e<sup>−rT</sup></span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -2187,7 +2212,8 @@ elif "Derivados Forward" in section:
             rho_impl = (beta_h * _sigma_dji / sigma_s_h) if sigma_s_h > 0 else 0.0
             rho_impl = max(-1.0, min(1.0, rho_impl))
 
-            N_star = h_star * (VA_hedge / VF_hedge)
+            N_star   = h_star * (VA_hedge / VF_hedge)
+            N_tailed = N_star * np.exp(-r_fwd * T_fwd)   # Tailing: descuento e^{-rT}
             hedge_rows.append({
                 "Activo": ticker,
                 "β (CAPM)": f"{beta_h:.4f}",
@@ -2195,7 +2221,8 @@ elif "Derivados Forward" in section:
                 "σ_DJI (anual)": f"{_sigma_dji:.2%}",
                 "ρ (S vs DJI)": f"{rho_impl:.4f}",
                 "h* = β": f"{h_star:.4f}",
-                "N* (contratos)": f"{N_star:.2f}",
+                "N* estándar": f"{N_star:.2f}",
+                "N* tailed (e⁻ʳᵀ)": f"{N_tailed:.2f}",
                 "Cobertura USD": f"${h_star * VA_hedge:,.0f}",
             })
 
@@ -2204,17 +2231,84 @@ elif "Derivados Forward" in section:
 
         st.markdown("""
         <div class="key-insight">
-        <strong>Interpretación del hedge ratio:</strong><br>
-        • <strong>h* = β</strong>: para una cobertura cruzada con futuros del DJI, el ratio óptimo es
-        exactamente el Beta del CAPM — se demuestra que minimiza la varianza del portafolio cubierto.<br>
-        • <strong>β &lt; 1</strong> (ej. AVAL o C6L.SI): se requieren <em>menos</em> contratos DJI por USD de exposición
-        porque el activo es menos volátil que el mercado.<br>
-        • <strong>β &gt; 1</strong> (ej. ETH-USD): se requieren <em>más</em> contratos porque el activo amplifica
-        los movimientos del mercado — la cobertura es más costosa.<br>
-        • <strong>N*</strong>: número de contratos de futuros a vender en corto. Ej: si β = 1.2 y VA/VF = 10,
-        se venden 12 contratos DJI para cubrir el portafolio.<br>
-        • El <strong>basis riesgo</strong> es inevitable en cobertura cruzada — la correlación imperfecta
-        entre el activo y el DJI es la fuente de error residual.
+        <strong>Interpretación del hedge ratio y tailing:</strong><br>
+        • <strong>h* = β</strong>: para cobertura cruzada con futuros DJI, h* es exactamente el Beta CAPM
+        (demostración: Cov(S,F<sub>DJI</sub>)/Var(F<sub>DJI</sub>) = β).<br>
+        • <strong>β &lt; 1</strong> (ej. AVAL, C6L.SI): se requieren <em>menos</em> contratos — el activo es
+        menos sensible al mercado que el índice.<br>
+        • <strong>β &gt; 1</strong> (ej. ETH-USD si aplica): se requieren <em>más</em> contratos — el activo
+        amplifica los movimientos del DJI.<br>
+        • <strong>N* tailed &lt; N* estándar</strong>: el Ajuste de Cola (e<sup>−rT</sup>) siempre reduce
+        ligeramente el número de contratos para compensar que las ganancias/pérdidas del futuro
+        se liquidan día a día (mark-to-market), no al vencimiento como un forward.<br>
+        • El <strong>basis riesgo</strong> es la varianza residual inevitable en toda cobertura cruzada.
+        El R² de la regresión ΔS sobre ΔF<sub>DJI</sub> = ρ² indica qué fracción del riesgo se elimina.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Ajuste de Convexidad ──────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### Ajuste de Convexidad: Forward vs. Futuro bajo Tasas Estocásticas")
+        st.markdown("""
+        <div class="theory-text">
+        Cuando las tasas de interés son <strong>estocásticas</strong> (no deterministas), el precio del
+        futuro (liquidación diaria) diverge del precio forward OTC (liquidación al vencimiento).
+        La diferencia se cuantifica con el <strong>ajuste de convexidad</strong>:<br><br>
+        <span style="font-size:1.15em;font-weight:700;color:#7c3aed;">
+        F<sub>futuro</sub> − f<sub>forward</sub> ≈ ½ · F · σ<sub>r</sub> · σ<sub>S</sub> · ρ<sub>rS</sub> · (T−t)²
+        </span><br><br>
+        La dependencia cuadrática en (T−t)² hace que el ajuste sea despreciable para vencimientos
+        cortos (&lt;6 meses) pero <strong>material para vencimientos largos</strong> (&gt;2 años).
+        </div>
+        """, unsafe_allow_html=True)
+
+        ca_col1, ca_col2, ca_col3 = st.columns(3)
+        with ca_col1:
+            sigma_r_ca = st.number_input("σ_r Volatilidad tasa (% anual)", value=1.0,
+                                         min_value=0.0, max_value=10.0, step=0.1, key="ca_sr") / 100
+        with ca_col2:
+            sigma_s_ca = st.number_input("σ_S Volatilidad activo (% anual)", value=20.0,
+                                         min_value=0.1, max_value=200.0, step=0.5, key="ca_ss") / 100
+        with ca_col3:
+            rho_rs_ca  = st.number_input("ρ (tasa vs. precio)", value=0.30,
+                                         min_value=-1.0, max_value=1.0, step=0.05, key="ca_rho")
+
+        # Precio forward de referencia: promedio de los activos
+        F_ref = float(np.mean([float(data_cache["ind"][tk]["Close"].dropna().iloc[-1])
+                                for tk in valid_assets
+                                if data_cache["ind"].get(tk) is not None
+                                and "Close" in data_cache["ind"][tk].columns]))
+
+        convex_adj = 0.5 * F_ref * sigma_r_ca * sigma_s_ca * rho_rs_ca * (T_fwd ** 2)
+        F_futuro   = F_ref * np.exp(carry_rate * T_fwd) + convex_adj
+
+        ca_c1, ca_c2, ca_c3 = st.columns(3)
+        ca_c1.metric("Precio Forward (OTC)", f"${F_ref * np.exp(carry_rate * T_fwd):,.4f}")
+        ca_c2.metric("Ajuste de Convexidad", f"${convex_adj:+.4f}",
+                     help="Positivo si ρ > 0: el futuro cotiza por encima del forward")
+        ca_c3.metric("Precio Futuro (bolsa)", f"${F_futuro:,.4f}")
+
+        # Tabla de ajuste por horizonte
+        horizons = [1, 3, 6, 12, 24]
+        ca_rows = []
+        for h_m in horizons:
+            h_y = h_m / 12.0
+            adj = 0.5 * F_ref * sigma_r_ca * sigma_s_ca * rho_rs_ca * (h_y ** 2)
+            ca_rows.append({
+                "Vencimiento": f"{h_m}M",
+                "T (años)": f"{h_y:.3f}",
+                "Ajuste Convexidad ($)": f"${adj:.4f}",
+                "Ajuste / F (bp)": f"{abs(adj/F_ref)*10000:.2f} bp",
+                "Relevancia": "Despreciable" if abs(adj/F_ref) < 0.0005 else ("Moderado" if abs(adj/F_ref) < 0.005 else "Material"),
+            })
+        st.dataframe(pd.DataFrame(ca_rows), use_container_width=True)
+
+        st.markdown("""
+        <div class="theory-text" style="margin-top:4px;">
+        <strong>Cuándo importa el ajuste:</strong>
+        Acciones e índices (ρ<sub>rS</sub> ≈ 0, T &lt; 1 año) → ajuste despreciable, F ≈ f.
+        Futuros sobre tasas (Eurodollar, SOFR, T &gt; 2 años) → ajuste material, obligatorio para
+        construir curvas de rendimiento libres de arbitraje.
         </div>
         """, unsafe_allow_html=True)
 
