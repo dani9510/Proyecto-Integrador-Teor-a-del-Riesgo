@@ -2509,6 +2509,120 @@ elif "Opciones Monte Carlo" in section:
             )
             st.plotly_chart(fig_mc, use_container_width=True)
 
+            # ── Put-Call Parity check ─────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### Verificación: Paridad Put-Call")
+            parity_lhs = call_bsm - put_bsm
+            parity_rhs = S_opt - K_opt * np.exp(-r_opt * T_opt)
+            parity_err = abs(parity_lhs - parity_rhs)
+            pc1, pc2, pc3 = st.columns(3)
+            pc1.metric("C − P", f"${parity_lhs:.6f}", help="Diferencia Call − Put (BSM)")
+            pc2.metric("S − K·e⁻ʳᵀ", f"${parity_rhs:.6f}", help="Valor teórico de la paridad")
+            pc3.metric("Error |Δ|", f"${parity_err:.2e}",
+                       help="Debe ser < 1e-10 para validar la implementación BSM",
+                       delta="OK" if parity_err < 1e-9 else "ERROR")
+
+            # ── Greeks sensitivity chart ──────────────────────────────
+            st.markdown("---")
+            st.markdown("#### Sensibilidad de Griegas al Precio del Subyacente")
+            st.markdown("""
+            <div class="theory-text">
+            El <strong>Delta</strong> de una call aumenta de 0 a 1 a medida que el subyacente sube (opciones deep-ITM).
+            El <strong>Gamma</strong> —tasa de cambio del Delta— alcanza su máximo <em>cuando la opción está ATM</em>,
+            indicando dónde el riesgo de cobertura es mayor.
+            </div>
+            """, unsafe_allow_html=True)
+            S_sens = np.linspace(S_opt * 0.5, S_opt * 1.5, 200)
+            delta_c_arr = np.zeros(len(S_sens))
+            delta_p_arr = np.zeros(len(S_sens))
+            gamma_arr   = np.zeros(len(S_sens))
+            if T_opt > 0 and sigma_opt > 0:
+                _d1_arr = (np.log(S_sens / K_opt) + (r_opt + 0.5*sigma_opt**2)*T_opt) / (sigma_opt*np.sqrt(T_opt))
+                delta_c_arr = _norm.cdf(_d1_arr)
+                delta_p_arr = delta_c_arr - 1.0
+                gamma_arr   = _norm.pdf(_d1_arr) / (S_sens * sigma_opt * np.sqrt(T_opt))
+
+            from plotly.subplots import make_subplots as _msp
+            fig_sens = _msp(rows=2, cols=1, shared_xaxes=True,
+                            row_heights=[0.5, 0.5],
+                            subplot_titles=["Delta (Call & Put)", "Gamma"])
+            fig_sens.add_trace(go.Scatter(x=S_sens, y=delta_c_arr, name="Δ Call",
+                                          line=dict(color="#7c3aed", width=2)), row=1, col=1)
+            fig_sens.add_trace(go.Scatter(x=S_sens, y=delta_p_arr, name="Δ Put",
+                                          line=dict(color="#ec4899", width=2, dash="dash")), row=1, col=1)
+            fig_sens.add_trace(go.Scatter(x=S_sens, y=gamma_arr, name="Γ Gamma",
+                                          line=dict(color="#06b6d4", width=2)), row=2, col=1)
+            fig_sens.add_vline(x=K_opt, line_color="#f59e0b", line_dash="dash",
+                               annotation_text=f"K={K_opt:.2f}", row=1, col=1)
+            fig_sens.add_vline(x=K_opt, line_color="#f59e0b", line_dash="dash",
+                               annotation_text=f"K={K_opt:.2f}", row=2, col=1)
+            fig_sens.add_vline(x=S_opt, line_color="#10b981", line_dash="dot",
+                               annotation_text=f"S₀={S_opt:.2f}", row=2, col=1)
+            fig_sens.update_layout(
+                height=500, plot_bgcolor="#0f172a", paper_bgcolor="#0f172a",
+                font=dict(color="#e2e8f0"), legend=dict(orientation="h", y=-0.12),
+                title=f"Sensibilidad de Griegas — {opt_ticker} | σ={sigma_opt:.0%} | T={T_opt_months}M",
+            )
+            fig_sens.update_yaxes(gridcolor="#1e293b")
+            fig_sens.update_xaxes(title_text="Precio del Subyacente (S)", gridcolor="#1e293b", row=2, col=1)
+            st.plotly_chart(fig_sens, use_container_width=True)
+
+            # ── Stress Testing ────────────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### Stress Testing — Impacto de Shocks de Mercado")
+            st.markdown("""
+            <div class="theory-text">
+            Los <strong>stress tests</strong> evalúan cómo cambia el valor de la opción bajo escenarios adversos:
+            choques de volatilidad, caídas bruscas del subyacente, o subidas de tasas. Son obligatorios en
+            marcos regulatorios (Basilea III, FRTB) para carteras con derivados.
+            </div>
+            """, unsafe_allow_html=True)
+            stress_scenarios = [
+                ("Base",                  S_opt,        sigma_opt,       r_opt),
+                ("Vol +50%",              S_opt,        sigma_opt*1.5,   r_opt),
+                ("Vol x2 (crisis)",       S_opt,        sigma_opt*2.0,   r_opt),
+                ("Caída -20% (crash)",    S_opt*0.80,   sigma_opt*1.5,   r_opt),
+                ("Caída -40% (colapso)",  S_opt*0.60,   sigma_opt*2.0,   r_opt),
+                ("Rally +20%",            S_opt*1.20,   sigma_opt*0.8,   r_opt),
+                ("Tasas +200 pb",         S_opt,        sigma_opt,       r_opt+0.02),
+                ("Tasas -200 pb",         S_opt,        sigma_opt,       max(r_opt-0.02, 0.001)),
+            ]
+            stress_rows = []
+            for scen_name, s_s, sig_s, r_s in stress_scenarios:
+                c_s = _bsm(s_s, K_opt, r_s, T_opt, sig_s, "call")
+                p_s = _bsm(s_s, K_opt, r_s, T_opt, sig_s, "put")
+                dc = c_s - call_bsm
+                dp = p_s - put_bsm
+                stress_rows.append({
+                    "Escenario":      scen_name,
+                    "Spot (S)":       f"${s_s:,.2f}",
+                    "Volatilidad":    f"{sig_s:.1%}",
+                    "Tasa r":         f"{r_s:.2%}",
+                    "Call":           f"${c_s:.4f}",
+                    "Put":            f"${p_s:.4f}",
+                    "ΔCall vs Base":  f"${dc:+.4f}",
+                    "ΔPut vs Base":   f"${dp:+.4f}",
+                })
+            df_stress = pd.DataFrame(stress_rows)
+            st.dataframe(df_stress, use_container_width=True)
+
+            # Bar chart of Call/Put under each scenario
+            fig_stress = go.Figure()
+            s_names  = [r["Escenario"] for r in stress_rows]
+            c_prices = [float(r["Call"].replace("$","")) for r in stress_rows]
+            p_prices = [float(r["Put"].replace("$","")) for r in stress_rows]
+            fig_stress.add_trace(go.Bar(name="Call", x=s_names, y=c_prices, marker_color="#7c3aed"))
+            fig_stress.add_trace(go.Bar(name="Put",  x=s_names, y=p_prices, marker_color="#ec4899"))
+            fig_stress.update_layout(
+                barmode="group",
+                title=f"Precios de Opciones bajo Stress — {opt_ticker}  K={K_opt:.2f}",
+                yaxis_title="Precio (USD)",
+                plot_bgcolor="#0f172a", paper_bgcolor="#0f172a",
+                font=dict(color="#e2e8f0"), legend=dict(orientation="h", y=-0.15),
+                xaxis_tickangle=-30,
+            )
+            st.plotly_chart(fig_stress, use_container_width=True)
+
             # ── Resumen todos los activos ─────────────────────────────
             st.markdown("---")
             st.markdown("### Resumen BSM — Todos los activos del portafolio (opciones ATM)")
