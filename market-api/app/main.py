@@ -334,6 +334,8 @@ with st.sidebar:
             "🎯 Portafolio Markowitz",
             "🚦 Señales de Trading",
             "🌍 Análisis Macro",
+            "📐 Derivados Forward",
+            "🎰 Opciones Monte Carlo",
             "⚠️ Limitaciones y Críticas",
         ],
         label_visibility="collapsed"
@@ -402,14 +404,14 @@ valid_assets = []
 if data_cache:
     valid_assets = [t for t in tickers if t not in ['^DJI', '^IRX'] and t in data_cache["ind"]]
 
-total_sections = 18
+total_sections = 20
 section_names = [
     "Dashboard General", "Riesgo Sistemático", "Modelo CAPM", "Riesgo No Sistemático",
     "Rendimientos",
     "Valor en Riesgo (VaR)", "VaR No Paramétrico", "Simulación Histórica", "Simulación Bootstrap",
     "Expected Shortfall (CVaR)", "Simulación Montecarlo", "Backtesting del VaR", "Modelo GARCH(1,1)",
     "Indicadores Técnicos", "Portafolio Markowitz", "Señales de Trading", "Análisis Macro",
-    "Limitaciones y Críticas"
+    "Derivados Forward", "Opciones Monte Carlo", "Limitaciones y Críticas"
 ]
 
 # Get current section index
@@ -2010,10 +2012,423 @@ elif "Análisis Macro" in section:
             st.error(f"Error: {e}")
 
 # ═══════════════════════════════════════════════════════════════════
+# SECTION: DERIVADOS FORWARD
+# ═══════════════════════════════════════════════════════════════════
+elif "Derivados Forward" in section:
+    from scipy.stats import norm as _norm
+
+    st.markdown(f'<div class="lesson-badge">📐 Lección 19 de {total_sections}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Derivados Forward y Futuros</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="theory-text">
+    Un <strong>forward</strong> es un contrato para comprar o vender un activo en una fecha futura a un precio
+    pactado hoy. El <strong>modelo de costo de acarreo</strong> establece el precio forward teórico de no-arbitraje:<br><br>
+    <span style="font-size:1.3em; font-weight:700; color:#7c3aed;">F = S · e<sup>(r + u − y)(T − t)</sup></span><br><br>
+    donde <em>S</em> = precio spot actual, <em>r</em> = tasa libre de riesgo,
+    <em>u</em> = costo de almacenamiento anualizado, <em>y</em> = yield de conveniencia,
+    y <em>T − t</em> = tiempo al vencimiento en años.
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not data_cache:
+        st.warning("Sin datos disponibles.")
+    else:
+        col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+        with col_p1:
+            T_fwd_months = st.selectbox("Vencimiento (meses)", [1, 3, 6, 12], index=2, key="fwd_T")
+        with col_p2:
+            r_fwd = st.number_input("Tasa libre de riesgo (% anual)", value=4.0, min_value=0.0, max_value=20.0, step=0.1, key="fwd_r") / 100
+        with col_p3:
+            u_fwd = st.number_input("Costo almacenamiento (% anual)", value=0.0, min_value=0.0, max_value=5.0, step=0.1, key="fwd_u") / 100
+        with col_p4:
+            y_fwd = st.number_input("Yield de conveniencia (% anual)", value=0.0, min_value=0.0, max_value=10.0, step=0.1, key="fwd_y") / 100
+
+        T_fwd = T_fwd_months / 12.0
+        carry_rate = r_fwd + u_fwd - y_fwd
+
+        st.markdown(f"""
+        <div style="background:#1e293b;border-radius:8px;padding:10px 16px;margin-bottom:12px;font-size:13px;color:#94a3b8;">
+        T = {T_fwd_months} meses ({T_fwd:.4f} años) &nbsp;|&nbsp;
+        r = {r_fwd:.2%} &nbsp;|&nbsp; u = {u_fwd:.2%} &nbsp;|&nbsp;
+        y = {y_fwd:.2%} &nbsp;|&nbsp; <strong style="color:#7c3aed;">Carry neto = {carry_rate:.2%}</strong>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Tabla de precios forward ──────────────────────────────────
+        st.markdown("### Precios Forward Teóricos por Activo")
+        fwd_rows = []
+        for ticker in valid_assets:
+            df_fwd = data_cache["ind"].get(ticker)
+            if df_fwd is None or "Close" not in df_fwd.columns:
+                continue
+            S = float(df_fwd["Close"].dropna().iloc[-1])
+            F = S * np.exp(carry_rate * T_fwd)
+            basis = S - F
+            regime = "Contango" if F > S else "Backwardation"
+            vol_ann = float(df_fwd["log_return"].dropna().std() * np.sqrt(252)) if "log_return" in df_fwd.columns else np.nan
+            fwd_rows.append({
+                "Activo": ticker,
+                "Spot (S)": round(S, 4),
+                "Forward (F)": round(F, 4),
+                "F − S": round(F - S, 4),
+                "Basis S − F": round(basis, 4),
+                "Régimen": regime,
+                "Volatilidad Anual": f"{vol_ann:.2%}" if not np.isnan(vol_ann) else "N/A",
+            })
+
+        fwd_df = pd.DataFrame(fwd_rows)
+        st.dataframe(fwd_df, use_container_width=True)
+
+        # ── Gráfica Contango / Backwardation ─────────────────────────
+        colors_regime = ["#7c3aed" if r["Régimen"] == "Contango" else "#ec4899" for r in fwd_rows]
+        fig_regime = go.Figure(go.Bar(
+            x=[r["Activo"] for r in fwd_rows],
+            y=[r["F − S"] for r in fwd_rows],
+            marker_color=colors_regime,
+            text=[r["Régimen"] for r in fwd_rows],
+            textposition="outside",
+        ))
+        fig_regime.add_hline(y=0, line_color="#64748b", line_dash="dot")
+        fig_regime.update_layout(
+            title=f"Diferencial Forward − Spot (T = {T_fwd_months} meses)",
+            yaxis_title="F − S (USD)",
+            plot_bgcolor="#0f172a", paper_bgcolor="#0f172a",
+            font=dict(color="#e2e8f0"), showlegend=False,
+        )
+        st.plotly_chart(fig_regime, use_container_width=True)
+
+        st.markdown("""
+        <div class="theory-text" style="margin-top:0;">
+        <strong>Contango</strong> (barra morada, F &gt; S): el mercado espera precios futuros superiores al spot — predomina
+        cuando r + u &gt; y (costo de acarreo supera el yield de conveniencia). Típico en activos financieros con tasas positivas.<br>
+        <strong>Backwardation</strong> (barra rosa, F &lt; S): el yield de conveniencia supera al costo de acarreo,
+        reflejando escasez del activo en el mercado spot o alta demanda inmediata.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Basis histórico ───────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### Evolución Histórica del Basis: b(t) = S(t) − F(t)")
+        sel_basis = st.selectbox("Activo para basis histórico", valid_assets, key="fwd_basis_sel")
+        df_bsel = data_cache["ind"].get(sel_basis)
+        if df_bsel is not None and "Close" in df_bsel.columns:
+            closes_b = df_bsel["Close"].dropna()
+            F_hist = closes_b * np.exp(carry_rate * T_fwd)
+            basis_hist = closes_b - F_hist
+            fig_basis = go.Figure()
+            fig_basis.add_trace(go.Scatter(
+                x=basis_hist.index, y=basis_hist.values, name="Basis b(t)",
+                line=dict(color="#7c3aed", width=1.5),
+                fill="tozeroy", fillcolor="rgba(124,58,237,0.1)",
+            ))
+            fig_basis.add_hline(y=0, line_dash="dash", line_color="#ec4899",
+                                annotation_text="Paridad (F = S)")
+            fig_basis.update_layout(
+                title=f"Basis Forward — {sel_basis} | T = {T_fwd_months}M",
+                xaxis_title="Fecha", yaxis_title="Basis (USD)",
+                plot_bgcolor="#0f172a", paper_bgcolor="#0f172a",
+                font=dict(color="#e2e8f0"),
+            )
+            st.plotly_chart(fig_basis, use_container_width=True)
+
+        # ── Hedge Ratio ───────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### Ratio de Cobertura Óptima (h*) y Número de Contratos (N*)")
+        st.markdown("""
+        <div class="theory-text">
+        La <strong>ratio de cobertura mínimo-varianza</strong> determina qué fracción de la posición cubrir:<br><br>
+        <span style="font-size:1.2em;font-weight:700;color:#7c3aed;">h* = ρ · (σ<sub>S</sub> / σ<sub>F</sub>)</span><br><br>
+        El número de contratos necesarios (ajustado por tamaño de posición) es:<br>
+        <span style="font-size:1.2em;font-weight:700;color:#ec4899;">N* = h* · (V<sub>A</sub> / V<sub>F</sub>)</span><br><br>
+        Para activos financieros a corto plazo, σ<sub>F</sub> ≈ σ<sub>S</sub> y ρ ≈ 0.95,
+        de modo que h* ≈ 0.95 (cobertura casi completa).
+        </div>
+        """, unsafe_allow_html=True)
+
+        hcol1, hcol2 = st.columns(2)
+        with hcol1:
+            VA_hedge = st.number_input("Valor del portafolio a cubrir (USD)", value=100_000.0, min_value=1_000.0, step=1_000.0, key="hedge_VA")
+        with hcol2:
+            VF_hedge = st.number_input("Valor nocional por contrato de futuros (USD)", value=10_000.0, min_value=100.0, step=100.0, key="hedge_VF")
+
+        hedge_rows = []
+        for ticker in valid_assets:
+            df_h = data_cache["ind"].get(ticker)
+            if df_h is None or "log_return" not in df_h.columns:
+                continue
+            ret_h = df_h["log_return"].dropna()
+            if len(ret_h) < 30:
+                continue
+            sigma_s_h = float(ret_h.std() * np.sqrt(252))
+            sigma_f_h = sigma_s_h
+            rho_h = 0.95
+            h_star = rho_h * (sigma_s_h / sigma_f_h)
+            N_star = h_star * (VA_hedge / VF_hedge)
+            hedge_rows.append({
+                "Activo": ticker,
+                "σ_S (anual)": f"{sigma_s_h:.2%}",
+                "ρ spot-forward": f"{rho_h:.2f}",
+                "h* (ratio cobertura)": f"{h_star:.4f}",
+                "N* (contratos)": f"{N_star:.2f}",
+                "Posición cubierta (USD)": f"${h_star * VA_hedge:,.0f}",
+            })
+
+        hedge_df = pd.DataFrame(hedge_rows)
+        st.dataframe(hedge_df, use_container_width=True)
+
+        st.markdown("""
+        <div class="key-insight">
+        <strong>Interpretación práctica:</strong><br>
+        • <strong>h* cercano a 1</strong> indica que la cobertura es casi perfecta — por cada USD de exposición
+        se vende un USD equivalente en futuros.<br>
+        • <strong>N*</strong> es el número de contratos a vender en corto para neutralizar el riesgo de precio.<br>
+        • Para activos volátiles como <em>ETH-USD</em>, h* alto implica más contratos por unidad de exposición.<br>
+        • El basis riesgo (diferencia entre movimiento spot y futuro) es la fuente de imperfección en cualquier cobertura.
+        </div>
+        """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════
+# SECTION: OPCIONES MONTE CARLO
+# ═══════════════════════════════════════════════════════════════════
+elif "Opciones Monte Carlo" in section:
+    from scipy.stats import norm as _norm
+
+    st.markdown(f'<div class="lesson-badge">🎰 Lección 20 de {total_sections}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Opciones Europeas: Black-Scholes-Merton y Monte Carlo</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="theory-text">
+    El modelo <strong>Black-Scholes-Merton (BSM)</strong> asume que el precio del subyacente sigue un
+    <em>Movimiento Browniano Geométrico</em> y provee una fórmula cerrada para opciones europeas:<br><br>
+    <span style="font-size:1.1em;font-weight:700;color:#7c3aed;">Call = S·N(d₁) − K·e<sup>−rT</sup>·N(d₂)</span>&nbsp;&nbsp;&nbsp;
+    <span style="font-size:1.1em;font-weight:700;color:#ec4899;">Put = K·e<sup>−rT</sup>·N(−d₂) − S·N(−d₁)</span><br><br>
+    donde <strong>d₁ = [ln(S/K) + (r + σ²/2)·T] / (σ·√T)</strong> &nbsp;&nbsp; y &nbsp;&nbsp; <strong>d₂ = d₁ − σ·√T</strong>
+    </div>
+    """, unsafe_allow_html=True)
+
+    def _bsm(S, K, r, T, sigma, opt="call"):
+        if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+            return max(S - K, 0) if opt == "call" else max(K - S, 0)
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        if opt == "call":
+            return float(S * _norm.cdf(d1) - K * np.exp(-r * T) * _norm.cdf(d2))
+        return float(K * np.exp(-r * T) * _norm.cdf(-d2) - S * _norm.cdf(-d1))
+
+    def _greeks(S, K, r, T, sigma):
+        if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+            return {}
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        pdf_d1 = _norm.pdf(d1)
+        delta_c = float(_norm.cdf(d1))
+        delta_p = delta_c - 1.0
+        gamma   = float(pdf_d1 / (S * sigma * np.sqrt(T)))
+        vega    = float(S * pdf_d1 * np.sqrt(T) / 100)
+        theta_c = float((-S * pdf_d1 * sigma / (2 * np.sqrt(T))
+                         - r * K * np.exp(-r * T) * _norm.cdf(d2)) / 365)
+        theta_p = float((-S * pdf_d1 * sigma / (2 * np.sqrt(T))
+                         + r * K * np.exp(-r * T) * _norm.cdf(-d2)) / 365)
+        rho_c   = float(K * T * np.exp(-r * T) * _norm.cdf(d2) / 100)
+        rho_p   = float(-K * T * np.exp(-r * T) * _norm.cdf(-d2) / 100)
+        return dict(delta_c=delta_c, delta_p=delta_p, gamma=gamma,
+                    vega=vega, theta_c=theta_c, theta_p=theta_p,
+                    rho_c=rho_c, rho_p=rho_p)
+
+    if not data_cache:
+        st.warning("Sin datos disponibles.")
+    else:
+        # ── Parámetros globales ───────────────────────────────────────
+        op_col1, op_col2, op_col3 = st.columns(3)
+        with op_col1:
+            opt_ticker = st.selectbox("Activo subyacente", valid_assets, key="opt_tk")
+        with op_col2:
+            T_opt_months = st.selectbox("Vencimiento (meses)", [1, 3, 6, 12], index=2, key="opt_T")
+        with op_col3:
+            r_opt = st.number_input("Tasa libre de riesgo (% anual)", value=4.0, min_value=0.0, max_value=20.0, step=0.1, key="opt_r") / 100
+
+        T_opt = T_opt_months / 12.0
+
+        df_opt = data_cache["ind"].get(opt_ticker)
+        if df_opt is not None and "Close" in df_opt.columns:
+            S_opt = float(df_opt["Close"].dropna().iloc[-1])
+            sigma_hist = float(df_opt["log_return"].dropna().std() * np.sqrt(252)) if "log_return" in df_opt.columns else 0.20
+
+            op_col4, op_col5 = st.columns(2)
+            with op_col4:
+                K_opt = st.number_input("Strike (K)", value=round(S_opt, 2), min_value=0.01, key="opt_K")
+            with op_col5:
+                sigma_opt = st.number_input("Volatilidad (% anual)", value=round(sigma_hist * 100, 2),
+                                             min_value=0.1, max_value=300.0, step=0.5, key="opt_sigma") / 100
+
+            call_bsm = _bsm(S_opt, K_opt, r_opt, T_opt, sigma_opt, "call")
+            put_bsm  = _bsm(S_opt, K_opt, r_opt, T_opt, sigma_opt, "put")
+            greeks   = _greeks(S_opt, K_opt, r_opt, T_opt, sigma_opt)
+
+            st.markdown(f"""
+            <div style="background:#1e293b;border-radius:8px;padding:10px 16px;margin:8px 0 14px;font-size:13px;color:#94a3b8;">
+            <strong style="color:#e2e8f0;">{opt_ticker}</strong> &nbsp;|&nbsp;
+            Spot: <strong style="color:#7c3aed;">${S_opt:,.4f}</strong> &nbsp;|&nbsp;
+            Strike: <strong>${K_opt:,.4f}</strong> &nbsp;|&nbsp;
+            T = {T_opt_months}M &nbsp;|&nbsp;
+            σ hist = {sigma_hist:.2%} &nbsp;|&nbsp;
+            σ usada = {sigma_opt:.2%}
+            </div>
+            """, unsafe_allow_html=True)
+
+            # ── Precios BSM ───────────────────────────────────────────
+            st.markdown("#### Precios Black-Scholes-Merton")
+            m1, m2 = st.columns(2)
+            m1.metric("Precio CALL (BSM)", f"${call_bsm:.4f}",
+                      help="Valor teórico de la opción de compra europea")
+            m2.metric("Precio PUT (BSM)", f"${put_bsm:.4f}",
+                      help="Valor teórico de la opción de venta europea")
+
+            # ── Griegas ───────────────────────────────────────────────
+            if greeks:
+                st.markdown("#### Las Griegas — Sensibilidades de la Opción")
+                g1, g2, g3, g4 = st.columns(4)
+                g1.metric("Δ Call (Delta)", f"{greeks['delta_c']:.4f}",
+                          help="Cambio en precio de la opción por $1 de cambio en el subyacente. ATM ≈ 0.5")
+                g2.metric("Δ Put (Delta)", f"{greeks['delta_p']:.4f}",
+                          help="Delta del put es negativo (posición corta en subyacente)")
+                g3.metric("Γ (Gamma)", f"{greeks['gamma']:.6f}",
+                          help="Tasa de cambio del Delta. Máximo en ATM.")
+                g4.metric("ν Vega (/1% vol)", f"{greeks['vega']:.4f}",
+                          help="Cambio en precio por cada 1% de incremento en volatilidad")
+                g5, g6, g7, g8 = st.columns(4)
+                g5.metric("Θ Call (Theta/día)", f"{greeks['theta_c']:.4f}",
+                          help="Decaimiento de valor por día que pasa. Siempre negativo para posiciones largas.")
+                g6.metric("Θ Put (Theta/día)", f"{greeks['theta_p']:.4f}")
+                g7.metric("ρ Call (/1% tasa)", f"{greeks['rho_c']:.4f}",
+                          help="Sensibilidad al cambio en tasa libre de riesgo")
+                g8.metric("ρ Put (/1% tasa)", f"{greeks['rho_p']:.4f}")
+
+            # ── Payoff diagram ────────────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### Perfil de Ganancia/Pérdida al Vencimiento")
+            S_range = np.linspace(S_opt * 0.5, S_opt * 1.5, 300)
+            payoff_long_call  =  np.maximum(S_range - K_opt, 0) - call_bsm
+            payoff_long_put   =  np.maximum(K_opt - S_range, 0) - put_bsm
+            payoff_short_call = -payoff_long_call
+            payoff_short_put  = -payoff_long_put
+
+            fig_payoff = go.Figure()
+            fig_payoff.add_trace(go.Scatter(x=S_range, y=payoff_long_call,
+                                            name="Long Call", line=dict(color="#7c3aed", width=2)))
+            fig_payoff.add_trace(go.Scatter(x=S_range, y=payoff_long_put,
+                                            name="Long Put", line=dict(color="#ec4899", width=2, dash="dash")))
+            fig_payoff.add_trace(go.Scatter(x=S_range, y=payoff_short_call,
+                                            name="Short Call", line=dict(color="#a78bfa", width=1.5, dash="dot")))
+            fig_payoff.add_trace(go.Scatter(x=S_range, y=payoff_short_put,
+                                            name="Short Put", line=dict(color="#f472b6", width=1.5, dash="dot")))
+            fig_payoff.add_hline(y=0, line_color="#475569", line_dash="dot")
+            fig_payoff.add_vline(x=K_opt, line_color="#f59e0b", line_dash="dash",
+                                 annotation_text=f"Strike K={K_opt:.2f}", annotation_position="top right")
+            fig_payoff.add_vline(x=S_opt, line_color="#10b981", line_dash="dot",
+                                 annotation_text=f"Spot={S_opt:.2f}", annotation_position="top left")
+            fig_payoff.update_layout(
+                title=f"Perfiles P&G al Vencimiento — {opt_ticker} | K={K_opt:.2f} | T={T_opt_months}M",
+                xaxis_title="Precio del Subyacente (S_T)",
+                yaxis_title="Ganancia / Pérdida (USD)",
+                plot_bgcolor="#0f172a", paper_bgcolor="#0f172a",
+                font=dict(color="#e2e8f0"), legend=dict(orientation="h", y=-0.15),
+            )
+            st.plotly_chart(fig_payoff, use_container_width=True)
+
+            # ── Monte Carlo ───────────────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### Valoración Monte Carlo — 10,000 trayectorias")
+            st.markdown("""
+            <div class="theory-text">
+            Bajo el movimiento Browniano Geométrico (MBG), el precio al vencimiento es:<br>
+            <strong>S<sub>T</sub> = S₀ · exp[(r − σ²/2)·T + σ·√T·Z]</strong> &nbsp; con Z ~ N(0,1)<br><br>
+            El precio Monte Carlo es el valor presente del payoff esperado sobre 10,000 escenarios.
+            </div>
+            """, unsafe_allow_html=True)
+
+            np.random.seed(42)
+            Z_mc = np.random.standard_normal(10_000)
+            ST_mc = S_opt * np.exp((r_opt - 0.5 * sigma_opt ** 2) * T_opt
+                                   + sigma_opt * np.sqrt(T_opt) * Z_mc)
+
+            payoff_call_mc = np.maximum(ST_mc - K_opt, 0)
+            payoff_put_mc  = np.maximum(K_opt - ST_mc, 0)
+            call_mc   = float(np.exp(-r_opt * T_opt) * np.mean(payoff_call_mc))
+            put_mc    = float(np.exp(-r_opt * T_opt) * np.mean(payoff_put_mc))
+            call_se   = float(np.exp(-r_opt * T_opt) * np.std(payoff_call_mc) / np.sqrt(10_000))
+            put_se    = float(np.exp(-r_opt * T_opt) * np.std(payoff_put_mc)  / np.sqrt(10_000))
+
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("Call MC",  f"${call_mc:.4f}",  delta=f"BSM: ${call_bsm:.4f}")
+            mc2.metric("Put MC",   f"${put_mc:.4f}",   delta=f"BSM: ${put_bsm:.4f}")
+            mc3.metric("Error std. Call", f"${call_se:.4f}", help="Error estándar de la estimación MC")
+            mc4.metric("Error std. Put",  f"${put_se:.4f}")
+
+            fig_mc = go.Figure()
+            fig_mc.add_trace(go.Histogram(
+                x=ST_mc, nbinsx=80, name="S_T simulado",
+                marker_color="#7c3aed", opacity=0.75,
+            ))
+            fig_mc.add_vline(x=K_opt, line_color="#ec4899", line_dash="dash",
+                             annotation_text=f"K = {K_opt:.2f}", annotation_position="top right")
+            fig_mc.add_vline(x=S_opt, line_color="#f59e0b", line_dash="dot",
+                             annotation_text=f"S₀ = {S_opt:.2f}", annotation_position="top left")
+            pct_itm_call = float(np.mean(ST_mc > K_opt) * 100)
+            fig_mc.update_layout(
+                title=f"Distribución de S_T al vencimiento — {opt_ticker} | {10_000:,} simulaciones | ITM Call: {pct_itm_call:.1f}%",
+                xaxis_title="Precio al Vencimiento (S_T)",
+                yaxis_title="Frecuencia",
+                plot_bgcolor="#0f172a", paper_bgcolor="#0f172a",
+                font=dict(color="#e2e8f0"),
+            )
+            st.plotly_chart(fig_mc, use_container_width=True)
+
+            # ── Resumen todos los activos ─────────────────────────────
+            st.markdown("---")
+            st.markdown("### Resumen BSM — Todos los activos del portafolio (opciones ATM)")
+            all_rows = []
+            for tk in valid_assets:
+                df_tk = data_cache["ind"].get(tk)
+                if df_tk is None or "Close" not in df_tk.columns:
+                    continue
+                S_tk = float(df_tk["Close"].dropna().iloc[-1])
+                sig_tk = float(df_tk["log_return"].dropna().std() * np.sqrt(252)) if "log_return" in df_tk.columns else 0.20
+                K_tk = S_tk
+                c_tk = _bsm(S_tk, K_tk, r_opt, T_opt, sig_tk, "call")
+                p_tk = _bsm(S_tk, K_tk, r_opt, T_opt, sig_tk, "put")
+                g_tk = _greeks(S_tk, K_tk, r_opt, T_opt, sig_tk)
+                all_rows.append({
+                    "Activo": tk,
+                    "Spot (S)": f"${S_tk:,.4f}",
+                    "σ anual": f"{sig_tk:.2%}",
+                    "Call ATM": f"${c_tk:.4f}",
+                    "Put ATM": f"${p_tk:.4f}",
+                    "Δ Call": f"{g_tk.get('delta_c', 0):.4f}",
+                    "Γ Gamma": f"{g_tk.get('gamma', 0):.6f}",
+                    "ν Vega": f"{g_tk.get('vega', 0):.4f}",
+                    "Θ Call/día": f"{g_tk.get('theta_c', 0):.4f}",
+                })
+            st.dataframe(pd.DataFrame(all_rows), use_container_width=True)
+
+            st.markdown("""
+            <div class="key-insight">
+            <strong>Conclusiones clave:</strong><br>
+            • <strong>BSM ≈ Monte Carlo</strong>: la convergencia valida el modelo — la diferencia es el error estándar de simulación (típicamente &lt; $0.01).<br>
+            • <strong>Delta ≈ 0.50</strong> para opciones ATM — el precio puede ir en cualquier dirección con igual probabilidad implícita.<br>
+            • <strong>Theta negativo</strong>: el tiempo trabaja en contra del comprador — cada día que pasa erosiona el valor de la opción.<br>
+            • <strong>Vega alto en ETH-USD</strong>: la criptomoneda tiene mayor sensibilidad a cambios de volatilidad implícita,
+            reflejando su naturaleza más especulativa.<br>
+            • <strong>Paridad Put-Call</strong>: C − P = S − K·e<sup>−rT</sup> se cumple en BSM — un arbitraje sin riesgo si se viola.
+            </div>
+            """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════
 # SECTION: LIMITACIONES Y CRÍTICAS
 # ═══════════════════════════════════════════════════════════════════
 elif "Limitaciones" in section:
-    st.markdown(f'<div class="lesson-badge">⚠️ Lección 17 de {total_sections}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="lesson-badge">⚠️ Lección 20 de {total_sections}</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Limitaciones y Críticas al VaR</div>', unsafe_allow_html=True)
 
     limitations = [
