@@ -2015,8 +2015,6 @@ elif "Análisis Macro" in section:
 # SECTION: DERIVADOS FORWARD
 # ═══════════════════════════════════════════════════════════════════
 elif "Derivados Forward" in section:
-    from scipy.stats import norm as _norm
-
     st.markdown(f'<div class="lesson-badge">📐 Lección 19 de {total_sections}</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Derivados Forward y Futuros</div>', unsafe_allow_html=True)
 
@@ -2146,32 +2144,59 @@ elif "Derivados Forward" in section:
         </div>
         """, unsafe_allow_html=True)
 
+        st.markdown("""
+        <div class="theory-text" style="margin-bottom:10px;">
+        Para activos sin mercado de futuros propio (como acciones individuales), se usa una
+        <strong>cobertura cruzada</strong> con futuros del índice de referencia (DJI).
+        En este caso el ratio óptimo es exactamente el <strong>Beta CAPM</strong>:<br>
+        h* = Cov(S, F<sub>DJI</sub>) / Var(F<sub>DJI</sub>) = β
+        </div>
+        """, unsafe_allow_html=True)
+
         hcol1, hcol2 = st.columns(2)
         with hcol1:
             VA_hedge = st.number_input("Valor del portafolio a cubrir (USD)", value=100_000.0, min_value=1_000.0, step=1_000.0, key="hedge_VA")
         with hcol2:
             VF_hedge = st.number_input("Valor nocional por contrato de futuros (USD)", value=10_000.0, min_value=100.0, step=100.0, key="hedge_VF")
 
+        # Volatilidad del DJI para calcular ρ implícito
+        _dji_df  = data_cache["ind"].get("^DJI")
+        _sigma_dji = float(_dji_df["log_return"].dropna().std() * np.sqrt(252)) if (
+            _dji_df is not None and "log_return" in _dji_df.columns) else 0.15
+
         hedge_rows = []
         for ticker in valid_assets:
-            df_h = data_cache["ind"].get(ticker)
+            df_h   = data_cache["ind"].get(ticker)
+            capm_h = data_cache.get("capm", {}).get(ticker)
             if df_h is None or "log_return" not in df_h.columns:
                 continue
             ret_h = df_h["log_return"].dropna()
             if len(ret_h) < 30:
                 continue
+
             sigma_s_h = float(ret_h.std() * np.sqrt(252))
-            sigma_f_h = sigma_s_h
-            rho_h = 0.95
-            h_star = rho_h * (sigma_s_h / sigma_f_h)
+
+            # Beta CAPM (= h* para cobertura cruzada con DJI index futures)
+            beta_h = 1.0
+            if capm_h is not None and "CAPM_Beta" in capm_h.columns:
+                beta_h = float(capm_h["CAPM_Beta"].dropna().iloc[-1])
+
+            h_star = beta_h
+
+            # Correlación implícita ρ = β · σ_DJI / σ_S
+            rho_impl = (beta_h * _sigma_dji / sigma_s_h) if sigma_s_h > 0 else 0.0
+            rho_impl = max(-1.0, min(1.0, rho_impl))
+
             N_star = h_star * (VA_hedge / VF_hedge)
             hedge_rows.append({
                 "Activo": ticker,
+                "β (CAPM)": f"{beta_h:.4f}",
                 "σ_S (anual)": f"{sigma_s_h:.2%}",
-                "ρ spot-forward": f"{rho_h:.2f}",
-                "h* (ratio cobertura)": f"{h_star:.4f}",
+                "σ_DJI (anual)": f"{_sigma_dji:.2%}",
+                "ρ (S vs DJI)": f"{rho_impl:.4f}",
+                "h* = β": f"{h_star:.4f}",
                 "N* (contratos)": f"{N_star:.2f}",
-                "Posición cubierta (USD)": f"${h_star * VA_hedge:,.0f}",
+                "Cobertura USD": f"${h_star * VA_hedge:,.0f}",
             })
 
         hedge_df = pd.DataFrame(hedge_rows)
@@ -2179,12 +2204,17 @@ elif "Derivados Forward" in section:
 
         st.markdown("""
         <div class="key-insight">
-        <strong>Interpretación práctica:</strong><br>
-        • <strong>h* cercano a 1</strong> indica que la cobertura es casi perfecta — por cada USD de exposición
-        se vende un USD equivalente en futuros.<br>
-        • <strong>N*</strong> es el número de contratos a vender en corto para neutralizar el riesgo de precio.<br>
-        • Para activos volátiles como <em>ETH-USD</em>, h* alto implica más contratos por unidad de exposición.<br>
-        • El basis riesgo (diferencia entre movimiento spot y futuro) es la fuente de imperfección en cualquier cobertura.
+        <strong>Interpretación del hedge ratio:</strong><br>
+        • <strong>h* = β</strong>: para una cobertura cruzada con futuros del DJI, el ratio óptimo es
+        exactamente el Beta del CAPM — se demuestra que minimiza la varianza del portafolio cubierto.<br>
+        • <strong>β &lt; 1</strong> (ej. AVAL o C6L.SI): se requieren <em>menos</em> contratos DJI por USD de exposición
+        porque el activo es menos volátil que el mercado.<br>
+        • <strong>β &gt; 1</strong> (ej. ETH-USD): se requieren <em>más</em> contratos porque el activo amplifica
+        los movimientos del mercado — la cobertura es más costosa.<br>
+        • <strong>N*</strong>: número de contratos de futuros a vender en corto. Ej: si β = 1.2 y VA/VF = 10,
+        se venden 12 contratos DJI para cubrir el portafolio.<br>
+        • El <strong>basis riesgo</strong> es inevitable en cobertura cruzada — la correlación imperfecta
+        entre el activo y el DJI es la fuente de error residual.
         </div>
         """, unsafe_allow_html=True)
 
