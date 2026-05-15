@@ -2,7 +2,7 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 
-def compute_capm(data_dict, market_ticker="^GSPC", rf_ticker="^IRX"):
+def compute_capm(data_dict, market_ticker="^DJI", rf_ticker="^IRX"):
     """
     Computes BETA and CAPM Expected Return for all assets relative to a benchmark.
     Downloads the Risk Free Rate intrinsically so we do not modify the core API logic.
