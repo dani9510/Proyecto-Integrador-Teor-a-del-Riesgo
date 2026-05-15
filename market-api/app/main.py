@@ -52,8 +52,8 @@ st.markdown("""
     --accent-orange: #f59e0b;
     --accent-red: #ef4444;
     --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-secondary: #c8d6e5;
+    --text-muted: #94a3b8;
     --border-color: #1e2563;
     --gradient-1: linear-gradient(135deg, #7c3aed, #ec4899);
     --gradient-2: linear-gradient(135deg, #06b6d4, #10b981);
@@ -75,7 +75,7 @@ html, body, [data-testid="stAppViewContainer"], .main, .block-container {
     border-right: 1px solid var(--border-color) !important;
 }
 [data-testid="stSidebar"] * { color: var(--text-primary) !important; }
-[data-testid="stSidebar"] .stRadio > label { font-size: 11px !important; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted) !important; font-weight: 600 !important; }
+[data-testid="stSidebar"] .stRadio > label { font-size: 11px !important; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-secondary) !important; font-weight: 600 !important; }
 
 [data-testid="stSidebar"] .stRadio > div > label {
     background: transparent !important;
@@ -207,6 +207,24 @@ h3 { font-size: 1.2rem !important; font-weight: 600 !important; }
 .stNumberInput > div > div > input { background: var(--bg-card) !important; border: 1px solid var(--border-color) !important; color: var(--text-primary) !important; border-radius: 10px !important; }
 .stTextInput > div > div > input { background: var(--bg-card) !important; border: 1px solid var(--border-color) !important; color: var(--text-primary) !important; border-radius: 10px !important; }
 
+/* ── Widget label contrast fix ── */
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] p,
+.stSelectbox label, .stSelectbox label p,
+.stNumberInput label, .stNumberInput label p,
+.stSlider label, .stSlider label p,
+.stTextInput label, .stTextInput label p,
+.stTextArea label, .stTextArea label p,
+.stCheckbox label, .stCheckbox label p,
+.stRadio label, .stRadio label p,
+.stMultiSelect label, .stMultiSelect label p,
+.stDateInput label, .stDateInput label p {
+    color: var(--text-secondary) !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.3px !important;
+}
+
 .stButton > button {
     background: var(--gradient-1) !important;
     color: white !important;
@@ -226,7 +244,7 @@ h3 { font-size: 1.2rem !important; font-weight: 600 !important; }
     border-radius: 14px !important;
     padding: 16px 20px !important;
 }
-[data-testid="stMetric"] label { color: var(--text-muted) !important; font-size: 12px !important; text-transform: uppercase !important; letter-spacing: 1px !important; }
+[data-testid="stMetric"] label { color: var(--text-secondary) !important; font-size: 12px !important; text-transform: uppercase !important; letter-spacing: 1px !important; }
 [data-testid="stMetric"] [data-testid="stMetricValue"] { color: var(--text-primary) !important; font-size: 24px !important; font-weight: 700 !important; }
 
 /* Table overrides */
@@ -240,7 +258,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; }
 
 /* Tabs override */
 .stTabs [data-baseweb="tab-list"] { background: var(--bg-secondary) !important; border-radius: 12px !important; padding: 4px !important; gap: 4px !important; }
-.stTabs [data-baseweb="tab"] { background: transparent !important; color: var(--text-muted) !important; border-radius: 8px !important; font-weight: 500 !important; }
+.stTabs [data-baseweb="tab"] { background: transparent !important; color: var(--text-secondary) !important; border-radius: 8px !important; font-weight: 500 !important; }
 .stTabs [aria-selected="true"] { background: var(--accent-purple) !important; color: white !important; }
 
 /* Expander */
@@ -310,7 +328,7 @@ with st.sidebar:
     st.markdown("""
     <div style="padding: 15px 10px 20px 10px; text-align: center;">
         <div style="font-size: 28px; font-weight: 800; background: linear-gradient(135deg, #7c3aed, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px;">📚 Contenido</div>
-        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 2px;">Teoría del Riesgo · USTA</div>
+        <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px;">Teoría del Riesgo · USTA</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -343,7 +361,7 @@ with st.sidebar:
 
     st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
 
-    st.markdown('<p style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:1.5px; font-weight:600; margin-bottom:8px;">⚙️ Parámetros</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:1.5px; font-weight:600; margin-bottom:8px;">⚙️ Parámetros</p>', unsafe_allow_html=True)
     tickers_input = st.text_input("Activos", value="AVAL, ^DJI, ETH-USD, IBM, C6L.SI, NTDOY")
     tickers = [t.strip() for t in tickers_input.split(",") if t.strip()]
     confidence = st.slider("Confianza VaR", 0.90, 0.99, 0.95)
