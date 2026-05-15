@@ -7,7 +7,7 @@ def compute_signals(data_dict, rsi_oversold=30, rsi_overbought=70):
     signals = {}
 
     for ticker, df in data_dict.items():
-        if ticker in ["^GSPC", "^IRX"]:
+        if ticker in ["^DJI", "^IRX"]:
             continue
 
         df = df.copy()
