@@ -14,8 +14,8 @@ from modules.garch import compute_garch, compute_garch_comparison
 from modules.capm import compute_capm
 from modules.var import compute_var
 
-ASSETS = ["NVDA", "AAPL", "GOOG", "TSLA", "JPM", "^GSPC"]
-MARKET = "^GSPC"
+ASSETS = ["NVDA", "AAPL", "GOOG", "TSLA", "JPM", "^DJI"]
+MARKET = "^DJI"
 
 def s(v):
     if pd.isna(v) or v is None: return None
@@ -175,7 +175,7 @@ yaxis:{gridcolor:'#2a2f5e',zerolinecolor:'#475569'},legend:{bgcolor:'rgba(0,0,0,
 var C={responsive:true,displayModeBar:false};
 
 document.getElementById('hdr').textContent='Generado: '+D.date+' · '+tickers.length+' activos · Benchmark: '+MARKET;
-var MARKET='^GSPC';
+var MARKET='^DJI';
 
 var app=document.getElementById('app');
 var html='';
