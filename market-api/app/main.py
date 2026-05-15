@@ -2409,6 +2409,83 @@ elif "Opciones Monte Carlo" in section:
             m2.metric("Precio PUT (BSM)", f"${put_bsm:.4f}",
                       help="Valor teórico de la opción de venta europea")
 
+            # ── Volatilidad Implícita (Newton-Raphson) ────────────────
+            st.markdown("---")
+            st.markdown("#### Volatilidad Implícita — Newton-Raphson")
+            st.markdown("""
+            <div class="theory-text">
+            Dado un precio de mercado C<sup>mkt</sup>, la <strong>volatilidad implícita</strong> σ<sub>imp</sub>
+            es el único valor de σ que satisface C<sup>BSM</sup>(σ) = C<sup>mkt</sup>.
+            Se obtiene por Newton-Raphson:<br>
+            <strong>σ<sup>(k+1)</sup> = σ<sup>(k)</sup> − [C<sup>BSM</sup>(σ<sup>(k)</sup>) − C<sup>mkt</sup>] / Vega(σ<sup>(k)</sup>)</strong><br><br>
+            La convergencia es cuadrática porque C<sup>BSM</sup> es monótona en σ (Vega &gt; 0 siempre).
+            </div>
+            """, unsafe_allow_html=True)
+
+            iv_c1, iv_c2 = st.columns(2)
+            with iv_c1:
+                C_mkt_iv = st.number_input(
+                    "Precio de mercado de la Call (C^mkt)",
+                    value=round(call_bsm * 1.05, 4),
+                    min_value=0.0001,
+                    key="iv_cmkt",
+                    help="Introduce un precio distinto al BSM para ver la volatilidad implícita",
+                )
+            with iv_c2:
+                sigma0_iv = st.number_input(
+                    "Punto de partida σ⁰ (iteración inicial)",
+                    value=0.20, min_value=0.01, max_value=5.0, step=0.01,
+                    key="iv_sigma0",
+                )
+
+            _sigma_iv = float(sigma0_iv)
+            _iv_iters = []
+            _iv_conv  = False
+            for _kk in range(100):
+                if T_opt <= 0 or _sigma_iv <= 0:
+                    break
+                _d1_iv = (np.log(S_opt / K_opt) + (r_opt + 0.5*_sigma_iv**2)*T_opt) / (_sigma_iv*np.sqrt(T_opt))
+                _c_iv  = float(S_opt*_norm.cdf(_d1_iv)
+                               - K_opt*np.exp(-r_opt*T_opt)*_norm.cdf(_d1_iv - _sigma_iv*np.sqrt(T_opt)))
+                _vega_iv = float(S_opt * _norm.pdf(_d1_iv) * np.sqrt(T_opt))
+                _diff_iv = _c_iv - float(C_mkt_iv)
+                _iv_iters.append({
+                    "k": _kk,
+                    "σ^(k)": f"{_sigma_iv:.6f}",
+                    "C^BSM(σ)": f"${_c_iv:.4f}",
+                    "|residuo|": f"{abs(_diff_iv):.2e}",
+                })
+                if abs(_diff_iv) < 1e-8 or _vega_iv < 1e-12:
+                    _iv_conv = True
+                    break
+                _sigma_iv = _sigma_iv - _diff_iv / _vega_iv
+                if _sigma_iv <= 0 or _sigma_iv > 20:
+                    break
+
+            sigma_imp_val = float(_sigma_iv)
+            iv_m1, iv_m2, iv_m3 = st.columns(3)
+            iv_m1.metric("σ implícita (σ_imp)", f"{sigma_imp_val:.4%}",
+                         help="Volatilidad que iguala C^BSM al precio de mercado ingresado")
+            iv_m2.metric("Iteraciones Newton-Raphson", str(len(_iv_iters)))
+            iv_m3.metric("Estado", "Convergió ✓" if _iv_conv else "No convergió",
+                         delta="OK" if _iv_conv else "Revisar C^mkt")
+
+            _iv_sesgo = sigma_imp_val - sigma_opt
+            if abs(_iv_sesgo) > 0.001:
+                _dir = "mayor" if _iv_sesgo > 0 else "menor"
+                st.markdown(
+                    f"<div style='background:#1e293b;border-radius:6px;padding:8px 14px;font-size:13px;"
+                    f"color:#94a3b8;margin:6px 0;'>"
+                    f"σ<sub>imp</sub> = <strong style='color:#7c3aed;'>{sigma_imp_val:.2%}</strong> es "
+                    f"<strong>{_dir}</strong> que la σ paramétrica usada ({sigma_opt:.2%}). "
+                    f"Diferencia: <strong>{abs(_iv_sesgo):.2%}</strong> — "
+                    f"{'mercado cotiza más cara la opción' if _iv_sesgo > 0 else 'mercado cotiza más barata la opción'}."
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with st.expander("Ver convergencia iteración a iteración"):
+                st.dataframe(pd.DataFrame(_iv_iters), use_container_width=True)
+
             # ── Griegas ───────────────────────────────────────────────
             if greeks:
                 st.markdown("#### Las Griegas — Sensibilidades de la Opción")
@@ -2622,6 +2699,87 @@ elif "Opciones Monte Carlo" in section:
                 xaxis_tickangle=-30,
             )
             st.plotly_chart(fig_stress, use_container_width=True)
+
+            # ── Backtesting VaR (Kupiec + Basilea) ───────────────────
+            st.markdown("---")
+            st.markdown("#### Backtesting de VaR — Prueba de Kupiec y Zonas de Basilea")
+            st.markdown("""
+            <div class="theory-text">
+            El <strong>backtesting</strong> contrasta las predicciones del VaR con las pérdidas realmente observadas.
+            La prueba de <strong>Kupiec (1995)</strong> verifica la cobertura incondicional mediante un test de razón
+            de verosimilitudes con distribución χ²₁:<br><br>
+            <strong>LR<sub>POF</sub> = −2·ln[π₀ˣ·(1−π₀)ⁿ⁻ˣ / π̂ˣ·(1−π̂)ⁿ⁻ˣ] ~ χ²₁</strong><br><br>
+            donde π₀ = 1−α es la tasa de excepción teórica y π̂ = x/n la observada.
+            Se rechaza H₀ si LR<sub>POF</sub> &gt; 3.841 (χ²₁ al 5%).
+            </div>
+            """, unsafe_allow_html=True)
+
+            bt_c1, bt_c2, bt_c3 = st.columns(3)
+            with bt_c1:
+                n_bt = int(st.number_input("Días del backtest (n)", value=250, min_value=50,
+                                           max_value=2000, step=10, key="bt_n"))
+            with bt_c2:
+                x_bt = int(st.number_input("Excepciones observadas (x)", value=5, min_value=0,
+                                           max_value=n_bt, step=1, key="bt_x"))
+            with bt_c3:
+                alpha_bt_pct = st.selectbox("Nivel de confianza VaR", [95, 97.5, 99], index=2, key="bt_alpha")
+
+            pi0_bt   = 1.0 - alpha_bt_pct / 100.0
+            pi_hat_bt = x_bt / n_bt
+            esp_bt   = n_bt * pi0_bt
+
+            from scipy.stats import chi2 as _chi2_bt
+            if 0 < pi_hat_bt < 1:
+                _logL0 = (n_bt - x_bt)*np.log(1 - pi0_bt)   + x_bt*np.log(pi0_bt)
+                _logL1 = (n_bt - x_bt)*np.log(1 - pi_hat_bt) + x_bt*np.log(pi_hat_bt)
+                LR_POF_bt = float(-2 * (_logL0 - _logL1))
+            elif x_bt == 0:
+                LR_POF_bt = float(-2 * n_bt * np.log(1 - pi0_bt))
+            else:
+                LR_POF_bt = float(-2 * n_bt * np.log(pi0_bt))
+            pval_bt  = float(1 - _chi2_bt.cdf(LR_POF_bt, 1))
+            rechazo_bt = LR_POF_bt > 3.841
+
+            bm1, bm2, bm3, bm4 = st.columns(4)
+            bm1.metric("Excepciones esperadas", f"{esp_bt:.1f}")
+            bm2.metric("LR_POF estadístico", f"{LR_POF_bt:.4f}",
+                       help="Valor crítico χ²₁ al 5% = 3.841")
+            bm3.metric("p-valor Kupiec", f"{pval_bt:.4f}")
+            bm4.metric("Resultado H₀",
+                       "Rechaza ✗" if rechazo_bt else "No rechaza ✓",
+                       delta=("Modelo inadecuado" if rechazo_bt else "Modelo aceptable"),
+                       delta_color=("inverse" if rechazo_bt else "normal"))
+
+            # Basilea zones table
+            st.markdown("##### Zonas regulatorias de Basilea (backtest 250 días, VaR 99%)")
+            zonas_df = pd.DataFrame([
+                {"Zona": "🟢 Verde",    "Excepciones": "0 − 4",  "Multiplicador adicional al capital": "+0.00",
+                 "Diagnóstico": "Modelo aceptable"},
+                {"Zona": "🟡 Amarilla", "Excepciones": "5 − 9",  "Multiplicador adicional al capital": "+0.40 a +0.85",
+                 "Diagnóstico": "Requiere revisión y posible recalibración"},
+                {"Zona": "🔴 Roja",     "Excepciones": "≥ 10",   "Multiplicador adicional al capital": "+1.00",
+                 "Diagnóstico": "Modelo deficiente — sanción regulatoria"},
+            ])
+            st.dataframe(zonas_df, use_container_width=True)
+
+            if alpha_bt_pct == 99 and n_bt == 250:
+                if x_bt <= 4:
+                    _zona_lbl, _zona_col = "🟢 Verde — Modelo aceptable", "#15803d"
+                elif x_bt <= 9:
+                    _zona_lbl, _zona_col = "🟡 Amarilla — Requiere revisión", "#a16207"
+                else:
+                    _zona_lbl, _zona_col = "🔴 Roja — Modelo deficiente (sanción regulatoria)", "#b91c1c"
+                st.markdown(
+                    f"<div style='background:#1e293b;border-radius:8px;padding:12px 16px;margin:8px 0;'>"
+                    f"Con <strong>{x_bt}</strong> excepciones en <strong>250</strong> días al "
+                    f"<strong>99%</strong> VaR: "
+                    f"<span style='color:{_zona_col};font-weight:700;font-size:1.1em;'>{_zona_lbl}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("Las zonas de Basilea se aplican exactamente con n=250 y VaR al 99%. "
+                        "Ajusta los parámetros para ver la clasificación.")
 
             # ── Resumen todos los activos ─────────────────────────────
             st.markdown("---")
