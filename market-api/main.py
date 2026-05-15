@@ -11,7 +11,7 @@ from modules.var import compute_var
 
 app = FastAPI()
 
-TICKERS = ["AVAL", "^GSPC", "ETH-USD", "IBM", "C6L.SI","NTDOY"]
+TICKERS = ["AVAL", "^DJI", "ETH-USD", "IBM", "C6L.SI","NTDOY"]
 
 
 @app.get("/")
