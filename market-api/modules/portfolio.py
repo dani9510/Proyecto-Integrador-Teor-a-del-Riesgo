@@ -9,7 +9,7 @@ def optimize_portfolio(data_dict, num_portfolios=10000, risk_free_rate=0.04):
     # 1. Gather all log returns into a single DataFrame
     returns_df = pd.DataFrame()
     for ticker, df in data_dict.items():
-        if ticker in ["^GSPC", "^IRX"]: continue
+        if ticker in ["^DJI", "^IRX"]: continue
         if "log_return" in df.columns:
             returns_df[ticker] = df["log_return"]
     

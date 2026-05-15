@@ -342,7 +342,7 @@ with st.sidebar:
     st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
 
     st.markdown('<p style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:1.5px; font-weight:600; margin-bottom:8px;">⚙️ Parámetros</p>', unsafe_allow_html=True)
-    tickers_input = st.text_input("Activos", value="AVAL, ^GSPC, ETH-USD, IBM, C6L.SI, NTDOY")
+    tickers_input = st.text_input("Activos", value="AVAL, ^DJI, ETH-USD, IBM, C6L.SI, NTDOY")
     tickers = [t.strip() for t in tickers_input.split(",") if t.strip()]
     confidence = st.slider("Confianza VaR", 0.90, 0.99, 0.95)
     simulations = st.number_input("Simulaciones", min_value=1000, max_value=20000, value=10000, step=1000)
@@ -400,7 +400,7 @@ def _to_str(v):
 
 valid_assets = []
 if data_cache:
-    valid_assets = [t for t in tickers if t not in ['^GSPC', '^IRX'] and t in data_cache["ind"]]
+    valid_assets = [t for t in tickers if t not in ['^DJI', '^IRX'] and t in data_cache["ind"]]
 
 total_sections = 18
 section_names = [
@@ -560,8 +560,8 @@ elif "Riesgo Sistemático" in section:
         for t in valid_assets:
             if t in data_cache["ind"] and 'log_return' in data_cache["ind"][t].columns:
                 returns_df[t] = data_cache["ind"][t]["log_return"]
-        if '^GSPC' in data_cache["ind"] and 'log_return' in data_cache["ind"]['^GSPC'].columns:
-            returns_df["S&P 500"] = data_cache["ind"]["^GSPC"]["log_return"]
+        if '^DJI' in data_cache["ind"] and 'log_return' in data_cache["ind"]['^DJI'].columns:
+            returns_df["Dow Jones"] = data_cache["ind"]["^DJI"]["log_return"]
 
         if not returns_df.empty:
             corr = returns_df.corr()
@@ -671,8 +671,8 @@ elif "Modelo CAPM" in section:
             st.markdown("### 📈 Diagrama de Dispersión: Retornos del Activo vs S&P 500")
 
             sel_capm = st.selectbox("Seleccionar activo para scatter CAPM:", valid_assets, key="sel_capm")
-            if sel_capm and "^GSPC" in data_cache["ind"] and sel_capm in data_cache["ind"]:
-                mkt_ret = data_cache["ind"]["^GSPC"]["log_return"].dropna()
+            if sel_capm and "^DJI" in data_cache["ind"] and sel_capm in data_cache["ind"]:
+                mkt_ret = data_cache["ind"]["^DJI"]["log_return"].dropna()
                 asset_ret = data_cache["ind"][sel_capm]["log_return"].dropna()
                 aligned_capm = pd.concat([asset_ret, mkt_ret], axis=1, join="inner").dropna()
                 aligned_capm.columns = ["Asset", "Market"]
@@ -1879,7 +1879,7 @@ elif "Análisis Macro" in section:
     st.markdown("""
     <div class="theory-text">
     El análisis macro compara el rendimiento de nuestro <strong>portafolio optimizado</strong> contra el
-    <strong>S&P 500</strong> (^GSPC), el benchmark más utilizado para medir el desempeño del mercado norteamericano.
+    <strong>Dow Jones</strong> (^DJI), el benchmark utilizado para medir el desempeño del mercado norteamericano.
     El objetivo es generar <strong>Alfa (α)</strong>: retorno excedente ajustado por riesgo.
     </div>
     """, unsafe_allow_html=True)
@@ -1905,8 +1905,8 @@ elif "Análisis Macro" in section:
         # S&P 500 último valor y retorno YTD
         sp500_price = None
         sp500_ytd = None
-        if "^GSPC" in data_cache["ind"]:
-            sp_df = data_cache["ind"]["^GSPC"]
+        if "^DJI" in data_cache["ind"]:
+            sp_df = data_cache["ind"]["^DJI"]
             try:
                 sp500_price = float(sp_df["Close"].iloc[-1])
                 first_close = float(sp_df["Close"].iloc[0])

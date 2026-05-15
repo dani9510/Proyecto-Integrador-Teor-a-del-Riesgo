@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-def analyze_macro(data_dict, max_sharpe_weights, benchmark_ticker="^GSPC"):
+def analyze_macro(data_dict, max_sharpe_weights, benchmark_ticker="^DJI"):
     """
     Compares the optimized portfolio performance against the market benchmark.
     Calculates Alpha, Tracking Error, Information Ratio and Max Drawdown.
